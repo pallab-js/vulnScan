@@ -1,8 +1,5 @@
 # WebScanner
 
-[![CI](https://github.com/yourusername/webscanner/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/webscanner/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 A CLI-based web security vulnerability scanner.
 
 ## Features
@@ -21,10 +18,6 @@ cd webscanner
 pip install -r requirements.txt
 python setup.py install
 ```
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Usage
 
