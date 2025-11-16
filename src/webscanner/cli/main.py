@@ -6,6 +6,7 @@ Main CLI interface for WebScanner
 import argparse
 import sys
 import os
+import logging
 from typing import List, Optional
 
 # Add src to path for imports
@@ -15,6 +16,7 @@ from webscanner.core.scanner import WebScanner
 from webscanner.checks import get_all_checks
 from webscanner.reporters import get_reporter
 from webscanner.utils.logger import get_logger, set_log_level
+from webscanner.config import config
 from webscanner import __version__
 
 logger = get_logger(__name__)
@@ -26,12 +28,7 @@ def create_parser() -> argparse.ArgumentParser:
         description="WebScanner - A powerful CLI-based web security vulnerability scanner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  webscanner http://example.com
-  webscanner https://example.com -o json -v
-  webscanner http://example.com --checks header_checks,file_checks --threads 5
-  webscanner http://example.com --user-agent "Custom Scanner/1.0"
-        """
+Examples: webscanner http://example.com"""
     )
 
     # Required arguments
@@ -63,22 +60,36 @@ Examples:
     parser.add_argument(
         '-t', '--threads',
         type=int,
-        default=10,
-        help='Number of concurrent threads (default: 10)'
+        default=config.get('scanner.threads', 10),
+        help=f'Number of concurrent threads (default: {config.get("scanner.threads", 10)})'
     )
 
     parser.add_argument(
         '--timeout',
         type=int,
-        default=30,
-        help='Request timeout in seconds (default: 30)'
+        default=config.get('scanner.timeout', 30),
+        help=f'Request timeout in seconds (default: {config.get("scanner.timeout", 30)})'
     )
 
     parser.add_argument(
         '--delay',
         type=float,
-        default=0.1,
-        help='Delay between requests in seconds (default: 0.1)'
+        default=config.get('scanner.delay', 0.1),
+        help=f'Delay between requests in seconds (default: {config.get("scanner.delay", 0.1)})'
+    )
+
+    parser.add_argument(
+        '--max-retries',
+        type=int,
+        default=config.get('scanner.max_retries', 3),
+        help=f'Maximum number of retries for failed requests (default: {config.get("scanner.max_retries", 3)})'
+    )
+
+    parser.add_argument(
+        '--requests-per-second',
+        type=float,
+        default=config.get('scanner.requests_per_second', 0),
+        help=f'Maximum requests per second (0 for unlimited, default: {config.get("scanner.requests_per_second", 0)})'
     )
 
     # HTTP options
@@ -98,6 +109,12 @@ Examples:
         help='Skip SSL certificate verification'
     )
 
+    parser.add_argument(
+        '--header',
+        action='append',
+        help='Additional HTTP header (format: "Key: Value")'
+    )
+
     # Logging options
     parser.add_argument(
         '-v', '--verbose',
@@ -113,6 +130,21 @@ Examples:
     )
 
     # Other options
+    parser.add_argument(
+        '--config',
+        help='Path to configuration file (JSON format)'
+    )
+
+    parser.add_argument(
+        '--save-results',
+        help='Save scan results to file (JSON format)'
+    )
+
+    parser.add_argument(
+        '--load-results',
+        help='Load scan results from file and skip scanning'
+    )
+
     parser.add_argument(
         '--version',
         action='version',
@@ -148,6 +180,10 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
 
+    # Load custom config if specified
+    if args.config:
+        config.load_config(args.config)
+
     # Setup logging
     setup_logging(args.verbose, args.quiet)
 
@@ -156,7 +192,15 @@ def main():
         if not args.url.startswith(('http://', 'https://')):
             args.url = f'http://{args.url}'
 
-        logger.info(f"Starting WebScanner {__version__} against {args.url}")
+        # Parse custom headers
+        custom_headers = {}
+        if args.header:
+            for header in args.header:
+                if ':' in header:
+                    key, value = header.split(':', 1)
+                    custom_headers[key.strip()] = value.strip()
+                else:
+                    logger.warning(f"Invalid header format: {header}")
 
         # Initialize scanner
         scanner = WebScanner(
@@ -164,7 +208,10 @@ def main():
             max_threads=args.threads,
             timeout=args.timeout,
             delay=args.delay,
-            user_agent=args.user_agent
+            user_agent=args.user_agent,
+            max_retries=args.max_retries,
+            requests_per_second=args.requests_per_second,
+            custom_headers=custom_headers
         )
 
         # Configure HTTP client
@@ -172,29 +219,41 @@ def main():
         scanner.http_client.proxies = proxies
         scanner.http_client.verify_ssl = not args.no_ssl_verify
 
-        # Get available checks
-        all_checks = get_all_checks()
-        selected_checks = parse_checks(args.checks)
-
-        if 'all' not in selected_checks:
-            # Filter checks
-            checks_to_run = []
-            for check_name in selected_checks:
-                if check_name in all_checks:
-                    checks_to_run.append(all_checks[check_name])
-                else:
-                    logger.warning(f"Unknown check: {check_name}")
+        if args.load_results:
+            # Load results from file
+            scanner.load_results(args.load_results)
+            results = scanner.results
+            logger.info(f"Loaded {len(results)} results from {args.load_results}")
         else:
-            checks_to_run = list(all_checks.values())
+            logger.info(f"Starting WebScanner {__version__} against {args.url}")
 
-        if not checks_to_run:
-            logger.error("No valid checks selected")
-            sys.exit(1)
+            # Get available checks
+            all_checks = get_all_checks()
+            selected_checks = parse_checks(args.checks)
 
-        logger.info(f"Running {len(checks_to_run)} checks")
+            if 'all' not in selected_checks:
+                # Filter checks
+                checks_to_run = []
+                for check_name in selected_checks:
+                    if check_name in all_checks:
+                        checks_to_run.append(all_checks[check_name])
+                    else:
+                        logger.warning(f"Unknown check: {check_name}")
+            else:
+                checks_to_run = list(all_checks.values())
 
-        # Run scan
-        results = scanner.scan(checks_to_run)
+            if not checks_to_run:
+                logger.error("No valid checks selected")
+                sys.exit(1)
+
+            logger.info(f"Running {len(checks_to_run)} checks")
+
+            # Run scan
+            results = scanner.scan(checks_to_run)
+
+            # Save results if requested
+            if args.save_results:
+                scanner.save_results(args.save_results)
 
         # Generate report
         reporter = get_reporter(args.output)

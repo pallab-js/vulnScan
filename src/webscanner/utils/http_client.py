@@ -5,6 +5,7 @@ HTTP client utilities for WebScanner
 import requests
 import time
 import random
+import threading
 from typing import Optional, Dict, Any, Tuple
 import logging
 from urllib.parse import urljoin, urlparse
@@ -24,8 +25,9 @@ class HttpClient:
     ]
 
     def __init__(self, timeout: int = 30, user_agent: Optional[str] = None,
-                 delay: float = 0.1, proxies: Optional[Dict[str, str]] = None,
-                 verify_ssl: bool = True):
+                  delay: float = 0.1, proxies: Optional[Dict[str, str]] = None,
+                  verify_ssl: bool = True, max_retries: int = 3,
+                  requests_per_second: float = 0, custom_headers: Optional[Dict[str, str]] = None):
         """
         Initialize HTTP client
 
@@ -40,6 +42,14 @@ class HttpClient:
         self.delay = delay
         self.proxies = proxies
         self.verify_ssl = verify_ssl
+        self.max_retries = max_retries
+        self.requests_per_second = requests_per_second
+        self.custom_headers = custom_headers or {}
+        self._last_request_time = 0.0
+        self._rate_lock = threading.Lock()
+        self.request_count = 0
+        self._count_lock = threading.Lock()
+        self.rotate_after = 10  # Rotate user agent every N requests
 
         self.user_agent = user_agent or random.choice(self.DEFAULT_USER_AGENTS)
         self.session = requests.Session()
@@ -53,6 +63,9 @@ class HttpClient:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         })
+
+        # Add custom headers
+        self.session.headers.update(self.custom_headers)
 
         if proxies:
             self.session.proxies.update(proxies)
@@ -78,15 +91,47 @@ class HttpClient:
                                verify=self.verify_ssl, **kwargs)
 
     def request(self, method: str, url: str, **kwargs) -> requests.Response:
-        """Perform custom request with built-in delay"""
+        """Perform custom request with built-in delay and retry logic"""
         self._apply_delay()
-        return self.session.request(method, url, timeout=self.timeout,
-                                  verify=self.verify_ssl, **kwargs)
+        self._apply_rate_limit()
+
+        with self._count_lock:
+            self.request_count += 1
+            if self.request_count % self.rotate_after == 0:
+                self.rotate_user_agent()
+
+        last_exception = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                return self.session.request(method, url, timeout=self.timeout,
+                                           verify=self.verify_ssl, **kwargs)
+            except (requests.exceptions.RequestException, requests.exceptions.Timeout) as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    # Exponential backoff: 1s, 2s, 4s, etc.
+                    backoff_time = 2 ** attempt
+                    logger.debug(f"Request failed (attempt {attempt + 1}/{self.max_retries + 1}), retrying in {backoff_time}s: {e}")
+                    time.sleep(backoff_time)
+                else:
+                    logger.debug(f"Request failed after {self.max_retries + 1} attempts: {e}")
+                    raise last_exception
 
     def _apply_delay(self):
         """Apply delay between requests"""
         if self.delay > 0:
             time.sleep(self.delay)
+
+    def _apply_rate_limit(self):
+        """Apply rate limiting"""
+        if self.requests_per_second > 0:
+            with self._rate_lock:
+                current_time = time.time()
+                min_interval = 1.0 / self.requests_per_second
+                time_since_last = current_time - self._last_request_time
+                if time_since_last < min_interval:
+                    sleep_time = min_interval - time_since_last
+                    time.sleep(sleep_time)
+                self._last_request_time = time.time()
 
     def rotate_user_agent(self):
         """Rotate to a different user agent"""

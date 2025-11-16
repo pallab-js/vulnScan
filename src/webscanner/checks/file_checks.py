@@ -87,14 +87,19 @@ class FileChecks(BaseCheck):
             response = self.make_request('GET', url)
 
             if response and response.status_code == 200:
-                content_preview = response.text[:500] + "..." if len(response.text) > 500 else response.text
+                # Skip binary files and images
+                content_type = response.headers.get('content-type', '').lower()
+                if any(skip_type in content_type for skip_type in ['image/', 'application/octet-stream']):
+                    content_preview = "[Binary content]"
+                else:
+                    content_preview = response.text[:500] + "..." if len(response.text) > 500 else response.text
 
                 self.add_result(
                     url,
                     'critical_file_exposed',
                     'critical',
                     f"Critical configuration file exposed: {file_path}",
-                    f"Status: {response.status_code}\nContent preview: {content_preview}",
+                    f"Status: {response.status_code}\nContent-Type: {content_type}\nContent preview: {content_preview}",
                     f"Immediately secure or remove {file_path} from web accessible directory"
                 )
 

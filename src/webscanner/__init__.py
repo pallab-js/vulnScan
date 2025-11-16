@@ -1,7 +1,5 @@
 """
-WebScanner - A powerful, customizable CLI-based web security vulnerability scanner
-Inspired by Nikto, built for modern web security testing.
+WebScanner - CLI web security scanner
 """
 
 __version__ = "1.0.0"
-__author__ = "WebScanner Team"

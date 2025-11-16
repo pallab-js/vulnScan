@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 import sys
 import os
+import requests
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -57,6 +58,61 @@ class TestWebScanner(unittest.TestCase):
         self.assertEqual(check.base_url, self.base_url)
         self.assertEqual(check.http_client, client)
         self.assertEqual(check.results, [])
+
+    def test_url_validation(self):
+        """Test URL validation"""
+        from webscanner.core.scanner import _validate_url
+
+        # Valid URLs
+        _validate_url("http://example.com")
+        _validate_url("https://example.com")
+
+        # Invalid schemes
+        with self.assertRaises(ValueError):
+            _validate_url("ftp://example.com")
+
+        # Private IPs
+        with self.assertRaises(ValueError):
+            _validate_url("http://192.168.1.1")
+
+        # Localhost
+        with self.assertRaises(ValueError):
+            _validate_url("http://localhost")
+
+    def test_http_client_retry(self):
+        """Test HTTP client retry logic"""
+        client = HttpClient(max_retries=2)
+
+        with patch('requests.Session.request') as mock_request:
+            mock_request.side_effect = [requests.exceptions.Timeout(), requests.exceptions.Timeout(), Mock(status_code=200)]
+
+            # Should succeed after retries
+            response = client.request('GET', 'http://example.com')
+            self.assertEqual(mock_request.call_count, 3)
+
+    def test_config_loading(self):
+        """Test configuration loading"""
+        from webscanner.config import Config
+        import tempfile
+        import json
+
+        config_data = {
+            'scanner': {
+                'threads': 5,
+                'timeout': 20
+            }
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config_data, f)
+            config_file = f.name
+
+        config = Config(config_file)
+        self.assertEqual(config.get('scanner.threads'), 5)
+        self.assertEqual(config.get('scanner.timeout'), 20)
+
+        import os
+        os.unlink(config_file)
 
 
 class MockCheck(BaseCheck):

@@ -17,10 +17,10 @@ with open('requirements.txt', 'r', encoding='utf-8') as f:
 setup(
     name='webscanner',
     version='1.0.0',
-    description='A powerful, customizable CLI-based web security vulnerability scanner',
+    description='CLI web security scanner',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    author='WebScanner Team',
+    author='WebScanner',
     author_email='',
     url='https://github.com/yourusername/webscanner',
     packages=find_packages(where='src'),
@@ -49,5 +49,6 @@ setup(
     project_urls={
         'Bug Reports': 'https://github.com/yourusername/webscanner/issues',
         'Source': 'https://github.com/yourusername/webscanner',
+        'Documentation': 'https://github.com/yourusername/webscanner#readme',
     },
 )

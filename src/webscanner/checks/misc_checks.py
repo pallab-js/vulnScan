@@ -137,11 +137,11 @@ class MiscChecks(BaseCheck):
                 issues.append("Missing Secure flag")
 
             # Check for missing HttpOnly flag
-            if not cookie.has_nonstandard_attr('HttpOnly') and not hasattr(cookie, '_rest') or 'HttpOnly' not in str(cookie._rest):
+            if not cookie.has_nonstandard_attr('HttpOnly'):
                 issues.append("Missing HttpOnly flag")
 
             # Check for missing SameSite attribute
-            if not cookie.has_nonstandard_attr('SameSite') and not hasattr(cookie, '_rest') or 'SameSite' not in str(cookie._rest):
+            if not cookie.has_nonstandard_attr('SameSite'):
                 issues.append("Missing SameSite attribute")
 
             if issues:

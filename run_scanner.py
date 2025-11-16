@@ -27,7 +27,8 @@ def main():
         base_url=target_url,
         max_threads=5,
         timeout=10,
-        delay=0.2
+        delay=0.2,
+        max_retries=3
     )
 
     # Get all checks

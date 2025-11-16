@@ -17,6 +17,7 @@ class Config:
             'timeout': 30,
             'delay': 0.1,
             'max_retries': 3,
+            'requests_per_second': 0,
             'user_agent': None,  # Will use random from list
             'verify_ssl': True,
         },

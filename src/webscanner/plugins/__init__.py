@@ -5,10 +5,13 @@ Plugin system for WebScanner
 import importlib
 import os
 import sys
-from typing import List, Type, Dict
+from typing import List, Type, Dict, Optional
 from pathlib import Path
 
 from ..checks.base import BaseCheck
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class PluginManager:
@@ -47,7 +50,7 @@ class PluginManager:
                 module = importlib.import_module(module_name)
                 self._register_plugin_checks(module)
             except ImportError as e:
-                print(f"Warning: Could not load plugin {module_name}: {e}")
+                logger.warning(f"Could not load plugin {module_name}: {e}")
 
     def _register_plugin_checks(self, module):
         """Register check classes from a plugin module"""
@@ -64,13 +67,13 @@ class PluginManager:
                     check_name = attr.__name__.lower()
 
                 self.plugins[check_name] = attr
-                print(f"Loaded plugin check: {check_name}")
+                logger.info(f"Loaded plugin check: {check_name}")
 
     def get_plugin_checks(self) -> Dict[str, Type[BaseCheck]]:
         """Get all loaded plugin checks"""
         return self.plugins.copy()
 
-    def get_plugin_check(self, name: str) -> Type[BaseCheck]:
+    def get_plugin_check(self, name: str) -> Optional[Type[BaseCheck]]:
         """Get a specific plugin check by name"""
         return self.plugins.get(name)
 
